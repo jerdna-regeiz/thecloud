@@ -35,7 +35,7 @@
 // I found out my china dfplayer mini need isAck = false
 #define ISACK false
 
-#define DEBUG false
+#define DEBUG true
 
 // Storage
 #include <EEPROM.h>
@@ -86,8 +86,8 @@
 #define BUTTON_PIN 0
 #endif
 
-#define SOUND true
-#define BUTTON true
+#define SOUND false
+#define BUTTON false
 
 
 #define click_delay 10
@@ -107,9 +107,10 @@ unsigned char hue=0;
 CRGB leds[NUM_LEDS];
 
 struct Config {
-  uint8_t magic = 1337;
+  uint8_t magic = 13371;
   uint8_t volume = 25;
   uint8_t cur_animation = 0;
+  uint8_t setupcount = 0;
 };
 
 Config config;
@@ -306,6 +307,8 @@ void lightning::strike(){
 
 void lightning::animate(){
   Serial.println(F("Lightning!"));
+  Serial.println(config.cur_animation);
+  
   uint16_t wait = random16() % 1000;
   strike();
   delay(wait);
@@ -334,6 +337,7 @@ class unicorn_cloud : public animation{
 
     virtual void animate() {
       Serial.println(F("Unicorns!"));
+      Serial.println(config.cur_animation);
       for (int i=0; i < num_leds; ++i) {
         leds[i] = CHSV(led_hues[i], 255, 100);
         led_hues[i] = (led_hues[i]+1)%256;
@@ -389,7 +393,7 @@ class color_roll : public animation{
           files_available = myDFPlayer.readFileCountsInFolder(folder);
           #if DEBUG
           Serial.print(F(" reading thunder files "));
-          Serial.print(F(" (try ");Serial.print(tries));Serial.print(F("):"));
+          Serial.print(F(" (try "));Serial.print(tries);Serial.print(F("):"));
           Serial.println(files_available);
           #endif
           delay(200);
@@ -397,20 +401,25 @@ class color_roll : public animation{
         Serial.print(F("Files_available"));
         Serial.println(files_available);
       }
+      Serial.println(F("setup color_roll done"));
     }
 
     /// Called when mode is switching to this animation
     virtual void begin() {
-      myDFPlayer.enableLoop();
-      myDFPlayer.loopFolder(folder);
-      myDFPlayer.start();
-      Serial.println(F("Singing lulabies"));
+      if (sound_available) {
+        myDFPlayer.enableLoop();
+        myDFPlayer.loopFolder(folder);
+        myDFPlayer.start();
+        Serial.println(F("Singing lulabies"));
+      }
     }
     /// Called when mode is leaving this animation
     virtual void end() {
-      myDFPlayer.pause();
-      myDFPlayer.disableLoop();
-      Serial.println(F("Stopped singing"));
+      if (sound_available) {
+        myDFPlayer.pause();
+        myDFPlayer.disableLoop();
+        Serial.println(F("Stopped singing"));
+      }
     }
 
     virtual void key_double() {
@@ -437,6 +446,8 @@ void button_up();
 
 void setup() {
   Serial.begin(115200);
+  
+  Serial.println(F("Begin setup"));
   FastLED.addLeds<WS2812B, DATA_PIN, RGB>(leds, NUM_LEDS);
   if (BUTTON) {
 
@@ -452,18 +463,37 @@ void setup() {
   }
 
 
+  Serial.println(F("Read Config"));
   EEPROM.get(0, config);
   Config cfg_default;
   if (config.magic != cfg_default.magic) {
+  Serial.print(F("Default CONFIG: "));
     config = cfg_default;
   }
-
+  Serial.print(F("Animation: "));
+  Serial.println(config.cur_animation);
+  //config.cur_animation = (config.cur_animation + 1) % NUM_ANIMATIONS;
+  config.cur_animation = (config.cur_animation + 1);
+  if (config.cur_animation >= NUM_ANIMATIONS) {
+    config.cur_animation = 0;
+  }
+  Serial.println(config.cur_animation);
+  config.setupcount = (config.setupcount + 1);
+  Serial.print(F("Setup: "));
+  Serial.println(config.setupcount);
+  EEPROM.put(0, config);
+  
+  Serial.println(F("Write Config"));
+  delay(50);
 
   // initialize sound output
-  mySoftwareSerial.begin(9600);
+  if (SOUND) {
+    mySoftwareSerial.begin(9600);
+  }
 
   Serial.println(F("Begin clouding"));
-  Serial.println(F("Initializing sound..."));
+
+  
 
   if (SOUND && !myDFPlayer.begin(mySoftwareSerial, false)) {  //Use softwareSerial to communicate with mp3.
     #if DEBUG
@@ -473,30 +503,34 @@ void setup() {
     #endif
     sound_available = false;
   } else {
-    #if DEBUG
-    Serial.println("Sound enabled");
-    #endif
-    uint8_t type = myDFPlayer.readType();
-    //myDFPlayer.setTimeOut(1500);
-    myDFPlayer.volume(config.volume);  //Set volume value. From 0 to 30
-    sound_available = true;
-
-    myDFPlayer.play(1);
-
-    int volume = myDFPlayer.readVolume();
-    int filecount = myDFPlayer.readFileCounts();
-    #if DEBUG
-    Serial.print("Volume: "); Serial.println(volume); //read current volume
-    Serial.print("Files: "); Serial.println(filecount); //read all file counts in SD card
-    #endif
-    uint8_t type2 = myDFPlayer.readType();
-    printDetail(myDFPlayer.readType(), myDFPlayer.read());
-    if (type == TimeOut && type2 == TimeOut && volume == -1 && filecount == -1) {
-      #if DEGBUG
-      Serial.println("Sorry, guess I was wrong about sound =(");
-      Serial.println("Sound disabled");
+    if (SOUND) {
+      #if DEBUG
+      Serial.println("Sound enabled");
       #endif
-      sound_available = false;
+      uint8_t type = myDFPlayer.readType();
+      //myDFPlayer.setTimeOut(1500);
+      myDFPlayer.volume(config.volume);  //Set volume value. From 0 to 30
+      sound_available = true;
+  
+      myDFPlayer.play(1);
+  
+      int volume = myDFPlayer.readVolume();
+      int filecount = myDFPlayer.readFileCounts();
+      #if DEBUG
+      Serial.print("Volume: "); Serial.println(volume); //read current volume
+      Serial.print("Files: "); Serial.println(filecount); //read all file counts in SD card
+      #endif
+      uint8_t type2 = myDFPlayer.readType();
+      printDetail(myDFPlayer.readType(), myDFPlayer.read());
+      if (type == TimeOut && type2 == TimeOut && volume == -1 && filecount == -1) {
+        #if DEGBUG
+        Serial.println("Sorry, guess I was wrong about sound =(");
+        Serial.println("Sound disabled");
+        #endif
+        sound_available = false;
+      }else{
+        sound_available = false;
+      }
     }
   }
 
